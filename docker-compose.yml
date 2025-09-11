@@ -1,0 +1,73 @@
+version: "3.8"
+services:
+  postgres:
+    image: postgres:15
+    container_name: agri_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agri}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agri_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-agri_db}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    container_name: agri_redis
+    ports:
+      - "6379:6379"
+
+  minio:
+    image: minio/minio:RELEASE.2025-01-01T00-00-00Z
+    container_name: agri_minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console
+
+  auth:
+    build: ./services/auth-service
+    container_name: auth_service
+    env_file: .env
+    depends_on: [postgres, redis, minio]
+    ports:
+      - "8001:8001"
+
+  farmer:
+    build: ./services/farmer-service
+    container_name: farmer_service
+    env_file: .env
+    depends_on: [auth, postgres, minio]
+    ports:
+      - "8002:8002"
+
+  image_inference:
+    build: ./services/image-inference
+    container_name: image_inference
+    env_file: .env
+    depends_on: [minio, postgres]
+    ports:
+      - "8003:8003"
+
+  recommendation:
+    build: ./services/recommendation-service
+    container_name: recommendation_service
+    env_file: .env
+    depends_on: [postgres, redis]
+    ports:
+      - "8004:8004"
+
+  ingest_worker:
+    build: ./services/ingest-worker
+    container_name: ingest_worker
+    env_file: .env
+    depends_on: [postgres, redis]
+    restart: "no"
+
+volumes:
+  pgdata:
